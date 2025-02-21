@@ -1,0 +1,5 @@
+tensorflow>=2.0
+metaworld@ git+https://github.com/rlworkgroup/metaworld.git@0875192baaa91c43523708f55866d98eaf3facaf#egg=metaworld
+pandas
+matplotlib
+seaborn

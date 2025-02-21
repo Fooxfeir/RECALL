@@ -1,0 +1,43 @@
+{
+    "activation":	"lrelu",
+    "agent_policy_exploration":	false,
+    "alpha":	"auto",
+    "batch_size":	128,
+    "behavior_cloning":	false,
+    "buffer_type":	"fifo",
+    "carried_critic":	false,
+    "cl_method":	"ft",
+    "cl_reg_coef":	0.0,
+    "clipnorm":	null,
+    "gamma":	0.99,
+    "hidden_sizes":	[
+        256,
+        256,
+        256,
+        256
+    ],
+    "hide_task_id":	true,
+    "log_every":	20000,
+    "logger_output":	[
+        "tensorboard",
+        "tsv"
+    ],
+    "lr":	0.001,
+    "multihead_archs":	true,
+    "packnet_retrain_steps":	0,
+    "policy_reg_coef":	0.0,
+    "regularize_critic":	false,
+    "replay_size":	1000000,
+    "reset_buffer_on_task_change":	true,
+    "reset_critic_on_task_change":	false,
+    "reset_optimizer_on_task_change":	true,
+    "seed":	null,
+    "steps_per_task":	1000000,
+    "target_output_std":	0.089,
+    "tasks":	"CW20",
+    "use_layer_norm":	true,
+    "use_multi_layer_head":	false,
+    "use_popArt":	false,
+    "use_separate_critic":	false,
+    "value_reg_coef":	0.0
+}

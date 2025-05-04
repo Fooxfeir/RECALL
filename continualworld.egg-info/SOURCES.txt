@@ -5,7 +5,6 @@ setup.py
 continualworld.egg-info/PKG-INFO
 continualworld.egg-info/SOURCES.txt
 continualworld.egg-info/dependency_links.txt
-continualworld.egg-info/requires.txt
 continualworld.egg-info/top_level.txt
 myrecall/__init__.py
 myrecall/envs.py

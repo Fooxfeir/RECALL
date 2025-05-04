@@ -27,16 +27,16 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
-    def sample_batch(self, batch_size: int) -> Dict[str, tf.Tensor]:
+    def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
-        return dict(
-            obs=tf.convert_to_tensor(self.obs_buf[idxs]),
-            next_obs=tf.convert_to_tensor(self.next_obs_buf[idxs]),
-            actions=tf.convert_to_tensor(self.actions_buf[idxs]),
-            rewards=tf.convert_to_tensor(self.rewards_buf[idxs]),
-            done=tf.convert_to_tensor(self.done_buf[idxs]),
+        batch = dict(
+            obs=tf.convert_to_tensor(self.obs_buf[idxs], dtype=tf.float32),
+            next_obs=tf.convert_to_tensor(self.next_obs_buf[idxs], dtype=tf.float32),
+            actions=tf.convert_to_tensor(self.actions_buf[idxs], dtype=tf.float32),
+            rewards=tf.convert_to_tensor(self.rewards_buf[idxs], dtype=tf.float32),
+            done=tf.convert_to_tensor(self.done_buf[idxs], dtype=tf.float32),
         )
-
+        return batch
 
 class ReservoirReplayBuffer(ReplayBuffer):
     """Buffer for SAC agents implementing reservoir sampling."""

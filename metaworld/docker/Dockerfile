@@ -11,3 +11,5 @@ RUN pip install -e .[dev]
 
 # Add code stub last
 COPY --chown=$USER:$USER . $HOME/code/metaworld
+
+ENTRYPOINT ["/work/guilhermo.oliveira/RECALL/metaworld/docker/entrypoint-headless.sh"]

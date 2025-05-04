@@ -1,4 +1,8 @@
 import tensorflow as tf
+
+import cProfile  # Import the cProfile module
+
+
 gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
 if gpus:
     for gpu in gpus: tf.config.experimental.set_memory_growth(gpu, True)
@@ -149,4 +153,4 @@ if __name__ == "__main__":
     logger = EpochLogger(args["logger_output"], config=args, tasks=args["tasks"],
                          method=args["cl_method"], seed=args["seed"])
     del args["logger_output"]
-    main(logger, **args)
+    cProfile.run('main(logger, **args)', 'profile_results.prof')  # Run the main function with the cProfile module

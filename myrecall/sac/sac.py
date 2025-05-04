@@ -289,93 +289,94 @@ class SAC:
         rewards: tf.Tensor,
         done: tf.Tensor,
     ) -> Tuple[Tuple[List[tf.Tensor], List[tf.Tensor], List[tf.Tensor]], Dict]:
-        with tf.GradientTape(persistent=True) as g:
-            if self.auto_alpha:
-                log_alpha = self.get_log_alpha(obs)
-            else:
-                log_alpha = tf.math.log(self.alpha)
+        with tf.device('/GPU:0'):
+            with tf.GradientTape(persistent=True) as g:
+                if self.auto_alpha:
+                    log_alpha = self.get_log_alpha(obs)
+                else:
+                    log_alpha = tf.math.log(self.alpha)
 
-            # Main outputs from computation graph
-            mu, log_std, pi, logp_pi = self.actor(obs)
-            q1 = self.critic1(obs, actions)
-            q2 = self.critic2(obs, actions)
+                # Main outputs from computation graph
+                mu, log_std, pi, logp_pi = self.actor(obs)
+                q1 = self.critic1(obs, actions)
+                q2 = self.critic2(obs, actions)
 
-            # compose q with pi, for pi-learning
-            q1_pi = self.critic1(obs, pi)
-            q2_pi = self.critic2(obs, pi)
+                # compose q with pi, for pi-learning
+                q1_pi = self.critic1(obs, pi)
+                q2_pi = self.critic2(obs, pi)
 
-            # get actions and log probs of actions for next states, for Q-learning
-            _, _, pi_next, logp_pi_next = self.actor(next_obs)
+                # get actions and log probs of actions for next states, for Q-learning
+                _, _, pi_next, logp_pi_next = self.actor(next_obs)
 
-            # target q values, using actions from *current* policy
-            target_q1 = self.target_critic1(next_obs, pi_next)
-            target_q2 = self.target_critic2(next_obs, pi_next)
+                # target q values, using actions from *current* policy
+                target_q1 = self.target_critic1(next_obs, pi_next)
+                target_q2 = self.target_critic2(next_obs, pi_next)
 
-            # Min Double-Q:
-            min_q_pi = tf.minimum(q1_pi, q2_pi)
-            min_target_q = tf.minimum(target_q1, target_q2)
+                # Min Double-Q:
+                min_q_pi = tf.minimum(q1_pi, q2_pi)
+                min_target_q = tf.minimum(target_q1, target_q2)
 
-            # Entropy-regularized Bellman backup for Q functions, using Clipped Double-Q targets
-            if self.critic_cl is models.PopArtMlpCritic:
-                q_backup = tf.stop_gradient(
-                    self.critic1.normalize(
+                # Entropy-regularized Bellman backup for Q functions, using Clipped Double-Q targets
+                if self.critic_cl is models.PopArtMlpCritic:
+                    q_backup = tf.stop_gradient(
+                        self.critic1.normalize(
+                            rewards
+                            + self.gamma
+                            * (1 - done)
+                            * (
+                                    self.critic1.unnormalize(min_target_q, next_obs)
+                                    - tf.math.exp(log_alpha) * logp_pi_next
+                            ),
+                            obs,
+                        )
+                    )
+                else:
+                    q_backup = tf.stop_gradient(
                         rewards
                         + self.gamma
                         * (1 - done)
-                        * (
-                                self.critic1.unnormalize(min_target_q, next_obs)
-                                - tf.math.exp(log_alpha) * logp_pi_next
-                        ),
-                        obs,
+                        * (min_target_q - tf.math.exp(log_alpha) * logp_pi_next)
                     )
+
+                # Soft actor-critic losses
+                pi_loss = tf.reduce_mean(tf.math.exp(log_alpha) * logp_pi - min_q_pi)
+                q1_loss = 0.5 * tf.reduce_mean((q_backup - q1) ** 2)
+                q2_loss = 0.5 * tf.reduce_mean((q_backup - q2) ** 2)
+                value_loss = q1_loss + q2_loss
+
+                auxiliary_loss = self.get_auxiliary_loss(seq_idx, aux_batch)
+                metrics = dict(
+                    pi_loss=pi_loss,
+                    q1_loss=q1_loss,
+                    q2_loss=q2_loss,
+                    q1=q1,
+                    q2=q2,
+                    logp_pi=logp_pi,
+                    reg_loss=auxiliary_loss,
                 )
-            else:
-                q_backup = tf.stop_gradient(
-                    rewards
-                    + self.gamma
-                    * (1 - done)
-                    * (min_target_q - tf.math.exp(log_alpha) * logp_pi_next)
-                )
 
-            # Soft actor-critic losses
-            pi_loss = tf.reduce_mean(tf.math.exp(log_alpha) * logp_pi - min_q_pi)
-            q1_loss = 0.5 * tf.reduce_mean((q_backup - q1) ** 2)
-            q2_loss = 0.5 * tf.reduce_mean((q_backup - q2) ** 2)
-            value_loss = q1_loss + q2_loss
+                pi_loss += auxiliary_loss
+                value_loss += auxiliary_loss
 
-            auxiliary_loss = self.get_auxiliary_loss(seq_idx, aux_batch)
-            metrics = dict(
-                pi_loss=pi_loss,
-                q1_loss=q1_loss,
-                q2_loss=q2_loss,
-                q1=q1,
-                q2=q2,
-                logp_pi=logp_pi,
-                reg_loss=auxiliary_loss,
-            )
+                if self.auto_alpha:
+                    alpha_loss = -tf.reduce_mean(
+                        log_alpha * tf.stop_gradient(logp_pi + self.target_entropy)
+                    )
 
-            pi_loss += auxiliary_loss
-            value_loss += auxiliary_loss
-
+            # Compute gradients
+            actor_gradients = g.gradient(pi_loss, self.actor.trainable_variables)
+            critic_gradients = g.gradient(value_loss, self.critic_variables)
             if self.auto_alpha:
-                alpha_loss = -tf.reduce_mean(
-                    log_alpha * tf.stop_gradient(logp_pi + self.target_entropy)
-                )
+                alpha_gradient = g.gradient(alpha_loss, self.all_log_alpha)
+            else:
+                alpha_gradient = None
+            del g
 
-        # Compute gradients
-        actor_gradients = g.gradient(pi_loss, self.actor.trainable_variables)
-        critic_gradients = g.gradient(value_loss, self.critic_variables)
-        if self.auto_alpha:
-            alpha_gradient = g.gradient(alpha_loss, self.all_log_alpha)
-        else:
-            alpha_gradient = None
-        del g
+            if self.critic_cl is models.PopArtMlpCritic:
+                self.critic1.update_stats(q_backup, obs)
 
-        if self.critic_cl is models.PopArtMlpCritic:
-            self.critic1.update_stats(q_backup, obs)
-
-        gradients = (actor_gradients, critic_gradients, alpha_gradient)
-        return gradients, metrics
+            gradients = (actor_gradients, critic_gradients, alpha_gradient)
+            return gradients, metrics
 
     def apply_update(
         self,
@@ -572,15 +573,20 @@ class SAC:
                 current_task_timestep >= self.update_after
                 and current_task_timestep % self.update_every == 0
             ):
+                with tf.device('/GPU:0'):  # Ensure updates are performed on the GPU
+                    for j in range(self.update_every):
+                        # Sample batch and move it to GPU
+                        batch = self.replay_buffer.sample_batch(self.batch_size)
+                        batch = {k: tf.convert_to_tensor(v, dtype=tf.float32) for k, v in batch.items()}
 
-                for j in range(self.update_every):
-                    batch = self.replay_buffer.sample_batch(self.batch_size)
-                    episodic_batch = self.get_episodic_batch(current_task_idx)
-                    aux_batch = self.get_auxiliary_batch(current_task_idx)
-                    results = self.learn_on_batch(
-                        tf.convert_to_tensor(current_task_idx), batch, episodic_batch, aux_batch
-                    )
-                    self._log_after_update(results)
+                        episodic_batch = self.get_episodic_batch(current_task_idx)
+                        aux_batch = self.get_auxiliary_batch(current_task_idx)
+
+                        # Perform learning step
+                        results = self.learn_on_batch(
+                            tf.convert_to_tensor(current_task_idx), batch, episodic_batch, aux_batch
+                        )
+                        self._log_after_update(results)
 
             if (
                 self.env.name == "ContinualLearningEnv"
@@ -596,8 +602,9 @@ class SAC:
                 # if (current_task_timestep + 1 == self.env.steps_per_env) or (global_timestep + 1 == self.steps):
                 #     self.save_model()
 
-                # Test the performance of stochastic and detemi version of the agent.
-                self.test_agent(deterministic=False, num_episodes=self.num_test_eps_stochastic)
+                # Test the performance of stochastic and deterministic versions of the agent.
+                with tf.device('/GPU:0'):  # Ensure testing is performed on the GPU
+                    self.test_agent(deterministic=False, num_episodes=self.num_test_eps_stochastic)
                 # self.test_agent(deterministic=True, num_episodes=self.num_test_eps_deterministic)
 
                 self._log_after_epoch(epoch, current_task_timestep, global_timestep, info)
